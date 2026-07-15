@@ -1,0 +1,36 @@
+name = "blntly"
+main = "worker/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".vinext/dist"
+
+[assets]
+directory = ".vinext/static"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "blntly-db"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+NEXT_PUBLIC_LAUNCH_REGION = "Los Angeles County, CA"
+
+[env.production]
+name = "blntly-production"
+routes = [
+  { pattern = "blntly.app/*", zone_name = "blntly.app" },
+  { pattern = "www.blntly.app/*", zone_name = "blntly.app" },
+]
+
+[env.production.vars]
+NEXT_PUBLIC_APP_URL = "https://blntly.app"
+
+[env.staging]
+name = "blntly-staging"
+routes = [
+  { pattern = "staging.blntly.app/*", zone_name = "blntly.app" },
+]
+
+[env.staging.vars]
+NEXT_PUBLIC_APP_URL = "https://staging.blntly.app"

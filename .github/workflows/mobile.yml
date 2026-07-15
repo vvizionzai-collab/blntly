@@ -1,0 +1,195 @@
+name: Mobile — iOS & Android
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Platform to build"
+        required: true
+        default: "both"
+        type: choice
+        options: [ios, android, both]
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ── Shared web build for Capacitor ────────────────────────────
+  web-build:
+    name: Web Build (Capacitor target)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build static export
+        run: npx next build
+        env:
+          NEXT_PUBLIC_APP_URL: "https://blntly.app"
+          NEXT_EXPORT: "1"
+
+      - name: Upload web dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: out/
+          retention-days: 1
+
+  # ── iOS build (requires macOS + Xcode) ───────────────────────
+  ios:
+    name: iOS Build
+    runs-on: macos-15
+    needs: web-build
+    if: github.event.inputs.platform != 'android'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install deps + Capacitor CLI
+        run: npm ci
+
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: out/
+
+      - name: Sync Capacitor
+        run: npx cap sync ios
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: Import signing certificate
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERT_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_CERT_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERT_PATH=$RUNNER_TEMP/cert.p12
+          PROFILE_PATH=$RUNNER_TEMP/build.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app.keychain-db
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERT_PATH
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PROFILE_PATH
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERT_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles
+
+      - name: Build iOS IPA
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath $RUNNER_TEMP/App.xcarchive \
+            archive \
+            CODE_SIGN_IDENTITY="iPhone Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath $RUNNER_TEMP/App.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath $RUNNER_TEMP/ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLNTLY-iOS-${{ github.sha }}.ipa
+          path: ${{ runner.temp }}/ipa/*.ipa
+
+      - name: Submit to TestFlight
+        if: github.ref == 'refs/heads/main'
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          xcrun altool --upload-app \
+            -f $RUNNER_TEMP/ipa/*.ipa \
+            --apiKey $APP_STORE_CONNECT_API_KEY_ID \
+            --apiIssuer $APP_STORE_CONNECT_API_ISSUER_ID
+
+  # ── Android build ────────────────────────────────────────────
+  android:
+    name: Android Build
+    runs-on: ubuntu-latest
+    needs: web-build
+    if: github.event.inputs.platform != 'ios'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Download web dist
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist-${{ github.sha }}
+          path: out/
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Decode keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/keystore.jks
+
+      - name: Build release AAB
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: app/keystore.jks
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: BLNTLY-Android-${{ github.sha }}.aab
+          path: android/app/build/outputs/bundle/release/*.aab
+
+      - name: Publish to Google Play (internal track)
+        if: github.ref == 'refs/heads/main'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.blntly.app
+          releaseFiles: android/app/build/outputs/bundle/release/*.aab
+          track: internal
+          status: completed

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- app-store-connect: upload directly to App Store Connect / TestFlight -->
+  <key>method</key>
+  <string>app-store-connect</string>
+
+  <!-- Replace with your Apple Developer Team ID (10-character string) -->
+  <key>teamID</key>
+  <string>$(APPLE_TEAM_ID)</string>
+
+  <key>uploadBitcode</key>
+  <false/>
+
+  <key>uploadSymbols</key>
+  <true/>
+
+  <key>compileBitcode</key>
+  <false/>
+
+  <!-- Automatic signing for CI — requires a Distribution certificate + provisioning profile -->
+  <key>signingStyle</key>
+  <string>automatic</string>
+
+  <!-- Use App Store distribution certificate -->
+  <key>signingCertificate</key>
+  <string>Apple Distribution</string>
+
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>com.blntly.app</key>
+    <string>BLNTLY App Store Distribution</string>
+  </dict>
+
+  <!-- Strip Swift symbols for a smaller IPA -->
+  <key>stripSwiftSymbols</key>
+  <true/>
+
+  <!-- Destination: upload to App Store Connect (not export to disk) -->
+  <key>destination</key>
+  <string>upload</string>
+</dict>
+</plist>
