@@ -25,4 +25,11 @@ timeout \
   "${SITES_BUILD_TIMEOUT:-3m}" \
   "${vinext}" build
 
+# Package the hosting manifest into the build output so validate-artifact passes.
+# vinext does not currently copy it automatically.
+if [[ -f "${SITES_PROJECT_ROOT}/.openai/hosting.json" ]]; then
+  mkdir -p "${SITES_PROJECT_ROOT}/dist/.openai"
+  cp "${SITES_PROJECT_ROOT}/.openai/hosting.json" "${SITES_PROJECT_ROOT}/dist/.openai/hosting.json"
+fi
+
 "${script_dir}/validate-artifact.sh"
