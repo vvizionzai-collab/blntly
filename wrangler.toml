@@ -10,7 +10,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "blntly-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "2d116149-cc64-4b47-9832-ff6a4ed91837"
 
 [vars]
 NEXT_PUBLIC_LAUNCH_REGION = "Los Angeles County, CA"
